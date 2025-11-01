@@ -1,0 +1,50 @@
+name: pose_detection_tflite
+description: Pose & landmark detection using on-device TFLite models.
+version: 0.0.1
+
+repository: https://github.com/hugocornellier/pose_detection_tflite
+homepage: https://github.com/hugocornellier/pose_detection_tflite
+
+topics:
+  - tflite
+  - face-detection
+  - computer-vision
+  - flutter-plugin
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  image: ^4.5.4
+  tflite_flutter_custom: ^1.0.2
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  assets:
+    - packages/pose_detection_tflite/assets/models/pose_detection.tflite
+    - packages/pose_detection_tflite/assets/models/pose_landmark_lite.tflite
+    - packages/pose_detection_tflite/assets/models/pose_landmark_full.tflite
+    - packages/pose_detection_tflite/assets/models/pose_landmark_heavy.tflite
+    - assets/bin/libtensorflowlite_c-win.dll
+    - assets/bin/libtensorflowlite_c-linux.so
+
+  plugin:
+    platforms:
+      ios:
+        dartPluginClass: PoseDetectionTfliteDart
+      android:
+        dartPluginClass: PoseDetectionTfliteDart
+      macos:
+        pluginClass: PoseDetectionTflitePlugin
+      windows:
+        pluginClass: PoseDetectionTflitePlugin
+      linux:
+        pluginClass: PoseDetectionTflitePlugin
