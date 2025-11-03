@@ -5,10 +5,12 @@
 import FlutterMacOS
 import Foundation
 
-import face_detection_tflite
 import file_selector_macos
+import path_provider_foundation
+import pose_detection_tflite
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  PoseDetectionTflitePlugin.register(with: registry.registrar(forPlugin: "PoseDetectionTflitePlugin"))
   FileSelectorPlugin.register(with: registry.registrar(forPlugin: "FileSelectorPlugin"))
+  PathProviderPlugin.register(with: registry.registrar(forPlugin: "PathProviderPlugin"))
+  PoseDetectionTflitePlugin.register(with: registry.registrar(forPlugin: "PoseDetectionTflitePlugin"))
 }

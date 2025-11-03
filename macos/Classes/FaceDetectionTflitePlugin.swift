@@ -3,7 +3,7 @@ import FlutterMacOS
 
 public class PoseDetectionTflitePlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {
-    let channel = FlutterMethodChannel(name: "face_detection_tflite", binaryMessenger: registrar.messenger)
+    let channel = FlutterMethodChannel(name: "pose_detection_tflite", binaryMessenger: registrar.messenger)
     let instance = PoseDetectionTflitePlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
   }

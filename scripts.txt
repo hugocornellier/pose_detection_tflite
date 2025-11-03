@@ -1,0 +1,10 @@
+FULL LIB DIR => .txt
+
+ls -1 lib/*.dart lib/src/*.dart | head -4 | while read f; do printf '\n// ========== %s ==========\n\n' "$f"; cat -n "$f"; done > pose_detection_tflite-flutter-full_repository.txt && ls -1 lib/*.dart lib/src/*.dart | tail -4 | while read f; do printf '\n// ========== %s ==========\n\n' "$f"; cat -n "$f"; done >> pose_detection_tflite-flutter-full_repository.txt
+
+FULL TEST SUITE => .txt
+
+ls -1 test/*.dart test/unit/*.dart | while read f; do printf '\n// ========== %s ==========\n\n' "$f"; cat -n "$f"; done > pose_detection_tflite-tests.txt
+
+
+

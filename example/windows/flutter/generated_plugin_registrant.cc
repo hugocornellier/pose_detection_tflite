@@ -6,12 +6,12 @@
 
 #include "generated_plugin_registrant.h"
 
-#include <face_detection_tflite/face_detection_tflite_plugin.h>
 #include <file_selector_windows/file_selector_windows.h>
+#include <pose_detection_tflite/pose_detection_tflite_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
-  PoseDetectionTflitePluginRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("PoseDetectionTflitePlugin"));
   FileSelectorWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FileSelectorWindows"));
+  PoseDetectionTflitePluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("PoseDetectionTflitePlugin"));
 }
