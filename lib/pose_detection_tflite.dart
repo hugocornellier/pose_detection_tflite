@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ffi' as ffi;
+import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter_custom/tflite_flutter.dart';
@@ -11,12 +12,15 @@ class PoseDetector {
   Interpreter? _landmarkInterpreter;
 
   bool _isInitialized = false;
-  late PoseModelComplexity _complexity;
-
+  late PoseOptions _opts;
+  final YoloV8PersonDetector _yolo = YoloV8PersonDetector();
   static ffi.DynamicLibrary? _tfliteLib;
-  static List<List<double>>? _anchors;
 
-  img.Image _letterbox256(img.Image src, List<double> ratioOut, List<int> dwdhOut) {
+  img.Image _letterbox256(
+    img.Image src,
+    List<double> ratioOut,
+    List<int> dwdhOut
+  ) {
     final w = src.width;
     final h = src.height;
     final r = math.min(256 / h, 256 / w);
@@ -25,7 +29,12 @@ class PoseDetector {
     final dw = (256 - nw) ~/ 2;
     final dh = (256 - nh) ~/ 2;
 
-    final resized = img.copyResize(src, width: nw, height: nh, interpolation: img.Interpolation.linear);
+    final resized = img.copyResize(
+      src,
+      width: nw,
+      height: nh,
+      interpolation: img.Interpolation.linear
+    );
     final canvas = img.Image(width: 256, height: 256);
     img.compositeImage(canvas, resized, dstX: dw, dstY: dh);
 
@@ -34,122 +43,7 @@ class PoseDetector {
     return canvas;
   }
 
-  Future<List<PoseDetectionResult>> detectPosesFromImageWithYolo(
-      img.Image fullImage,
-      List<YoloDetection> detections, {
-        double minLandmarkScore = 0.5,
-      }) async {
-    if (!_isInitialized) {
-      throw StateError('PoseDetector not initialized. Call initialize() first.');
-    }
-    final W = fullImage.width.toDouble();
-    final H = fullImage.height.toDouble();
-    final results = <PoseDetectionResult>[];
-
-    for (final d in detections) {
-      final x1 = d.bboxXYXY[0].clamp(0.0, W).toInt();
-      final y1 = d.bboxXYXY[1].clamp(0.0, H).toInt();
-      final x2 = d.bboxXYXY[2].clamp(0.0, W).toInt();
-      final y2 = d.bboxXYXY[3].clamp(0.0, H).toInt();
-      final cw = math.max(1, x2 - x1);
-      final ch = math.max(1, y2 - y1);
-
-      final crop = img.copyCrop(fullImage, x: x1, y: y1, width: cw, height: ch);
-      final ratio = <double>[];
-      final dwdh = <int>[];
-      final letter = _letterbox256(crop, ratio, dwdh);
-      final r = ratio.first;
-      final dw = dwdh[0];
-      final dh = dwdh[1];
-
-      final lms = await _runLandmarkDetection(letter);
-      if (lms.score < minLandmarkScore) {
-        continue;
-      }
-
-      final out = <PoseLandmark>[];
-      for (final lm in lms.landmarks) {
-        final xp = lm.x * 256.0;
-        final yp = lm.y * 256.0;
-        final xContent = (xp - dw) / r;
-        final yContent = (yp - dh) / r;
-        final xOrig = (x1.toDouble() + xContent).clamp(0.0, W);
-        final yOrig = (y1.toDouble() + yContent).clamp(0.0, H);
-
-        out.add(PoseLandmark(
-          type: lm.type,
-          x: xOrig,
-          y: yOrig,
-          z: lm.z,
-          visibility: lm.visibility,
-        ));
-      }
-
-      final detCx = ((x1 + x2) / 2.0) / W;
-      final detCy = ((y1 + y2) / 2.0) / H;
-      final detW = (x2 - x1).toDouble() / W;
-      final detH = (y2 - y1).toDouble() / H;
-
-      results.add(PoseDetectionResult(
-        landmarks: out,
-        detection: PoseDetection(
-          xCenter: detCx,
-          yCenter: detCy,
-          width: detW,
-          height: detH,
-          score: d.score,
-          keypoints: const [],
-        ),
-        imageWidth: W.toInt(),
-        imageHeight: H.toInt(),
-      ));
-    }
-
-    return results;
-  }
-
-
-  static void _generateAnchors() {
-    if (_anchors != null) return;
-    final anchors = <List<double>>[];
-    const int numSteps1 = 28;
-    final double step1 = 1.0 / numSteps1;
-    final double offset1 = step1 / 2;
-    for (int y = 0; y < numSteps1; y++) {
-      for (int x = 0; x < numSteps1; x++) {
-        final double anchorX = offset1 + x * step1;
-        final double anchorY = offset1 + y * step1;
-        anchors.add([anchorX, anchorY, 1.0, 1.0]);
-        anchors.add([anchorX, anchorY, 1.0, 1.0]);
-      }
-    }
-    const int numSteps2 = 14;
-    final double step2 = 1.0 / numSteps2;
-    final double offset2 = step2 / 2;
-    for (int y = 0; y < numSteps2; y++) {
-      for (int x = 0; x < numSteps2; x++) {
-        final double anchorX = offset2 + x * step2;
-        final double anchorY = offset2 + y * step2;
-        anchors.add([anchorX, anchorY, 1.0, 1.0]);
-        anchors.add([anchorX, anchorY, 1.0, 1.0]);
-      }
-    }
-    const int numSteps3 = 7;
-    final double step3 = 1.0 / numSteps3;
-    final double offset3 = step3 / 2;
-    for (int y = 0; y < numSteps3; y++) {
-      for (int x = 0; x < numSteps3; x++) {
-        final double anchorX = offset3 + x * step3;
-        final double anchorY = offset3 + y * step3;
-        for (int k = 0; k < 6; k++) {
-          anchors.add([anchorX, anchorY, 1.0, 1.0]);
-        }
-      }
-    }
-    _anchors = anchors;
-  }
-
-  static Future<void> _ensureTFLiteLoaded() async {
+    static Future<void> _ensureTFLiteLoaded() async {
     if (_tfliteLib != null) return;
 
     final exe = File(Platform.resolvedExecutable);
@@ -209,124 +103,144 @@ class PoseDetector {
     );
   }
 
-  Future<void> initialize({
-    PoseModelComplexity complexity = PoseModelComplexity.heavy,
-  }) async {
+  Future<void> initialize({PoseOptions options = const PoseOptions()}) async {
     if (_isInitialized) {
       await dispose();
     }
 
     await _ensureTFLiteLoaded();
-    _complexity = complexity;
+    _opts = options;
 
-    _detectorInterpreter = await _loadModelFromAssets(
-      'packages/pose_detection_tflite/assets/models/pose_detection.tflite',
-    );
     _landmarkInterpreter = await _loadModelFromAssets(
-      _getLandmarkModelPath(complexity),
+      _getLandmarkModelPath(_opts.landmarkModel),
     );
-
-
-    _detectorInterpreter!.resizeInputTensor(0, [1, 224, 224, 3]);
-    _detectorInterpreter!.allocateTensors();
-
     _landmarkInterpreter!.resizeInputTensor(0, [1, 256, 256, 3]);
     _landmarkInterpreter!.allocateTensors();
 
-    _generateAnchors();
+    await _yolo.initialize();
+
     _isInitialized = true;
   }
 
-  String _getLandmarkModelPath(PoseModelComplexity complexity) {
-    switch (complexity) {
-      case PoseModelComplexity.lite:
+  String _getLandmarkModelPath(PoseLandmarkModel model) {
+    switch (model) {
+      case PoseLandmarkModel.lite:
         return 'packages/pose_detection_tflite/assets/models/pose_landmark_lite.tflite';
-      case PoseModelComplexity.full:
+      case PoseLandmarkModel.full:
         return 'packages/pose_detection_tflite/assets/models/pose_landmark_full.tflite';
-      case PoseModelComplexity.heavy:
+      case PoseLandmarkModel.heavy:
         return 'packages/pose_detection_tflite/assets/models/pose_landmark_heavy.tflite';
     }
   }
-
 
   Future<Interpreter> _loadModelFromAssets(String assetPath) async {
     return await Interpreter.fromAsset(assetPath);
   }
 
-  Future<PoseDetectionResult?> detectPose(File imageFile) async {
+  Future<List<PoseResult>> detect(List<int> imageBytes) async {
     if (!_isInitialized) {
       throw StateError('PoseDetector not initialized. Call initialize() first.');
     }
-
-    final imageBytes = await imageFile.readAsBytes();
-    final image = img.decodeImage(imageBytes);
-    if (image == null) return null;
-
-    return detectPoseFromImage(image);
+    final image = img.decodeImage(Uint8List.fromList(imageBytes));
+    if (image == null) return <PoseResult>[];
+    return detectOnImage(image);
   }
 
-  Future<PoseDetectionResult?> detectPoseFromImage(img.Image image) async {
+  Future<List<PoseResult>> detectOnImage(img.Image image) async {
     if (!_isInitialized) {
       throw StateError('PoseDetector not initialized. Call initialize() first.');
     }
 
-    final W = image.width;
-    final H = image.height;
-
-    final s = math.min(256.0 / W, 256.0 / H);
-    final wScaled = (W * s).round();
-    final hScaled = (H * s).round();
-
-    final leftPad = ((256 - wScaled) / 2).floor();
-    final topPad = ((256 - hScaled) / 2).floor();
-
-    final resized = img.copyResize(image, width: wScaled, height: hScaled);
-    final canvas = img.Image(width: 256, height: 256);
-    img.compositeImage(canvas, resized, dstX: leftPad, dstY: topPad);
-
-    final landmarks = await _runLandmarkDetection(canvas);
-
-    if (landmarks.score < 0.5) {
-      return null;
-    }
-
-    final out = <PoseLandmark>[];
-    for (final lm in landmarks.landmarks) {
-      final xp = lm.x * 256.0;
-      final yp = lm.y * 256.0;
-
-      final xContent = xp - leftPad;
-      final yContent = yp - topPad;
-
-      final xOrigPx = xContent / s;
-      final yOrigPx = yContent / s;
-
-      final xPx = xOrigPx.clamp(0.0, W.toDouble());
-      final yPx = yOrigPx.clamp(0.0, H.toDouble());
-
-      out.add(PoseLandmark(
-        type: lm.type,
-        x: xPx,
-        y: yPx,
-        z: lm.z,
-        visibility: lm.visibility,
-      ));
-    }
-
-
-    return PoseDetectionResult(
-      landmarks: out,
-      detection: PoseDetection(
-        xCenter: 0.5,
-        yCenter: 0.5,
-        width: 1.0,
-        height: 1.0,
-        score: 1.0,
-        keypoints: const [],
-      ),
-      imageWidth: W,
-      imageHeight: H,
+    final dets = _yolo.detectOnImage(
+      image,
+      confThres: _opts.detectorConf,
+      iouThres: _opts.detectorIou,
+      topkPreNms: 100,
+      maxDet: _opts.maxDetections,
+      personOnly: true,
     );
+
+    if (_opts.mode == PoseMode.boxes) {
+      final out = <PoseResult>[];
+      for (final d in dets) {
+        out.add(
+          PoseResult(
+            bboxPx: RectPx(
+              left: d.bboxXYXY[0],
+              top: d.bboxXYXY[1],
+              right: d.bboxXYXY[2],
+              bottom: d.bboxXYXY[3],
+            ),
+            score: d.score,
+            landmarks: null,
+            imageWidth: image.width,
+            imageHeight: image.height,
+          ),
+        );
+      }
+      return out;
+    }
+
+    final results = <PoseResult>[];
+    for (final d in dets) {
+      final x1 = d.bboxXYXY[0].clamp(0.0, image.width.toDouble()).toInt();
+      final y1 = d.bboxXYXY[1].clamp(0.0, image.height.toDouble()).toInt();
+      final x2 = d.bboxXYXY[2].clamp(0.0, image.width.toDouble()).toInt();
+      final y2 = d.bboxXYXY[3].clamp(0.0, image.height.toDouble()).toInt();
+      final cw = math.max(1, x2 - x1);
+      final ch = math.max(1, y2 - y1);
+
+      final crop = img.copyCrop(image, x: x1, y: y1, width: cw, height: ch);
+      final ratio = <double>[];
+      final dwdh = <int>[];
+      final letter = _letterbox256(crop, ratio, dwdh);
+      final r = ratio.first;
+      final dw = dwdh[0];
+      final dh = dwdh[1];
+
+      final lms = await _runLandmarkDetection(letter);
+      if (lms.score < _opts.minLandmarkScore) continue;
+
+      final pts = <PoseLandmark>[];
+      for (final lm in lms.landmarks) {
+        final xp = lm.x * 256.0;
+        final yp = lm.y * 256.0;
+        final xContent = (xp - dw) / r;
+        final yContent = (yp - dh) / r;
+        final xOrig = (x1.toDouble() + xContent).clamp(
+          0.0,
+          image.width.toDouble()
+        );
+        final yOrig = (y1.toDouble() + yContent).clamp(
+          0.0,
+          image.height.toDouble()
+        );
+        pts.add(PoseLandmark(
+          type: lm.type,
+          x: xOrig,
+          y: yOrig,
+          z: lm.z,
+          visibility: lm.visibility,
+        ));
+      }
+
+      results.add(
+        PoseResult(
+          bboxPx: RectPx(
+            left: d.bboxXYXY[0],
+            top: d.bboxXYXY[1],
+            right: d.bboxXYXY[2],
+            bottom: d.bboxXYXY[3],
+          ),
+          score: d.score,
+          landmarks: pts,
+          imageWidth: image.width,
+          imageHeight: image.height,
+        ),
+      );
+    }
+
+    return results;
   }
 
   List<List<List<List<double>>>>? _nhwc256Cache;
@@ -403,7 +317,11 @@ class PoseDetector {
     List<dynamic> worldData,
   ) {
     double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
-    double _clamp01(double v) => v.isNaN ? 0.0 : v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+    double _clamp01(double v) => v.isNaN
+        ? 0.0
+        : v < 0.0
+          ? 0.0
+          : (v > 1.0 ? 1.0 : v);
 
     final score = _sigmoid(scoreData[0][0] as double);
     final raw = landmarksData[0] as List<dynamic>;
@@ -438,27 +356,52 @@ class PoseDetector {
   Future<void> dispose() async {
     _detectorInterpreter?.close();
     _landmarkInterpreter?.close();
+    await _yolo.dispose();
     _detectorInterpreter = null;
     _landmarkInterpreter = null;
     _isInitialized = false;
   }
+
 }
 
-enum PoseModelComplexity {
-  lite,   // 2.69 MB - Fastest
-  full,   // 6.14 MB - Balanced
-  heavy,  // 26.42 MB - Most accurate
+enum PoseLandmarkModel {
+  lite,
+  full,
+  heavy,
+}
+
+enum PoseMode {
+  boxes,
+  boxesAndLandmarks,
+}
+
+class PoseOptions {
+  final PoseMode mode;
+  final PoseLandmarkModel landmarkModel;
+  final double detectorConf;
+  final double detectorIou;
+  final int maxDetections;
+  final double minLandmarkScore;
+
+  const PoseOptions({
+    this.mode = PoseMode.boxesAndLandmarks,
+    this.landmarkModel = PoseLandmarkModel.heavy,
+    this.detectorConf = 0.5,
+    this.detectorIou = 0.45,
+    this.maxDetections = 10,
+    this.minLandmarkScore = 0.5,
+  });
 }
 
 class PoseDetection {
-  final double xCenter; // Normalized 0-1
-  final double yCenter; // Normalized 0-1
-  final double width;   // Normalized 0-1
-  final double height;  // Normalized 0-1
+  final double xCenter;
+  final double yCenter;
+  final double width;
+  final double height;
   final double score;
   final List<PoseKeypoint> keypoints;
 
-  PoseDetection({
+  const PoseDetection({
     required this.xCenter,
     required this.yCenter,
     required this.width,
@@ -513,43 +456,55 @@ class PoseLandmark {
   }
 }
 
-class PoseDetectionResult {
-  final List<PoseLandmark> landmarks;
-  final PoseDetection detection;
+class RectPx {
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  const RectPx({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom
+  });
+}
+
+class PoseResult {
+  final RectPx bboxPx;
+  final double score;
+  final List<PoseLandmark>? landmarks;
   final int imageWidth;
   final int imageHeight;
 
-  PoseDetectionResult({
+  const PoseResult({
+    required this.bboxPx,
+    required this.score,
     required this.landmarks,
-    required this.detection,
     required this.imageWidth,
     required this.imageHeight,
   });
 
   PoseLandmark? getLandmark(PoseLandmarkType type) {
+    if (landmarks == null) return null;
     try {
-      return landmarks.firstWhere((l) => l.type == type);
-    } catch (e) {
+      return landmarks!.firstWhere((l) => l.type == type);
+    } catch (_) {
       return null;
     }
   }
 
-  bool get isVisible {
-    final avgVisibility = landmarks
-        .map((l) => l.visibility)
-        .reduce((a, b) => a + b) / landmarks.length;
-    return avgVisibility > 0.5;
-  }
+  bool get hasLandmarks => landmarks != null && landmarks!.isNotEmpty;
 
   @override
   String toString() {
-    final landmarksInfo = landmarks
+    final lm = landmarks ?? const <PoseLandmark>[];
+    final landmarksInfo = lm
         .map((l) => '${l.type.name}: (${l.x.toStringAsFixed(2)}, ${l.y.toStringAsFixed(2)}) vis=${l.visibility.toStringAsFixed(2)}')
         .join('\n');
-    return 'PoseDetectionResult(\n'
-        '  score=${detection.score.toStringAsFixed(3)},\n'
-        '  landmarks=${landmarks.length},\n'
-        '  visible=${isVisible},\n'
+    return 'PoseResult(\n'
+        '  score=${score.toStringAsFixed(3)},\n'
+        '  landmarks=${lm.length},\n'
         '  coords:\n$landmarksInfo\n)';
   }
 }
@@ -674,7 +629,6 @@ class YoloV8PersonDetector {
     _isInitialized = true;
   }
 
-
   bool get isInitialized => _isInitialized;
 
   Future<void> dispose() async {
@@ -685,7 +639,13 @@ class YoloV8PersonDetector {
 
   static double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
 
-  static img.Image _letterbox(img.Image src, int tw, int th, List<double> ratioOut, List<int> dwdhOut) {
+  static img.Image _letterbox(
+    img.Image src,
+    int tw,
+    int th,
+    List<double> ratioOut,
+    List<int> dwdhOut
+  ) {
     final w = src.width;
     final h = src.height;
     final r = math.min(th / h, tw / w);
@@ -694,7 +654,12 @@ class YoloV8PersonDetector {
     final dw = (tw - nw) ~/ 2;
     final dh = (th - nh) ~/ 2;
 
-    final resized = img.copyResize(src, width: nw, height: nh, interpolation: img.Interpolation.linear);
+    final resized = img.copyResize(
+      src,
+      width: nw,
+      height: nh,
+      interpolation: img.Interpolation.linear
+    );
     final canvas = img.Image(width: tw, height: th);
     img.fill(canvas, color: img.ColorRgb8(114, 114, 114));
     img.compositeImage(canvas, resized, dstX: dw, dstY: dh);
@@ -704,7 +669,12 @@ class YoloV8PersonDetector {
     return canvas;
   }
 
-  static List<double> _scaleFromLetterbox(List<double> xyxy, double ratio, int dw, int dh) {
+  static List<double> _scaleFromLetterbox(
+    List<double> xyxy,
+    double ratio,
+    int dw,
+    int dh
+  ) {
     final x1 = (xyxy[0] - dw) / ratio;
     final y1 = (xyxy[1] - dh) / ratio;
     final x2 = (xyxy[2] - dw) / ratio;
@@ -718,7 +688,12 @@ class YoloV8PersonDetector {
     return idx;
   }
 
-  static List<int> _nms(List<List<double>> boxes, List<double> scores, {double iouThres = 0.45, int maxDet = 100}) {
+  static List<int> _nms(
+    List<List<double>> boxes,
+    List<double> scores, {
+    double iouThres = 0.45,
+    int maxDet = 100
+  }) {
     if (boxes.isEmpty) return <int>[];
     final order = _argSortDesc(scores);
     final keep = <int>[];
@@ -820,13 +795,13 @@ class YoloV8PersonDetector {
   }
 
   List<YoloDetection> detectOnImage(
-      img.Image image, {
-        double confThres = 0.35,
-        double iouThres = 0.4,
-        int topkPreNms = 100,
-        int maxDet = 10,
-        bool personOnly = true,
-      }) {
+    img.Image image, {
+    double confThres = 0.35,
+    double iouThres = 0.4,
+    int topkPreNms = 100,
+    int maxDet = 10,
+    bool personOnly = true,
+  }) {
     if (!_isInitialized || _interpreter == null) {
       throw StateError('YoloV8PersonDetector not initialized.');
     }
@@ -839,9 +814,13 @@ class YoloV8PersonDetector {
 
     final input = List.generate(
       1,
-          (_) => List.generate(
+      (_) => List.generate(
         _inH,
-            (_) => List.generate(_inW, (_) => List<double>.filled(3, 0.0), growable: false),
+        (_) => List.generate(
+          _inW,
+          (_) => List<double>.filled(3, 0.0),
+          growable: false
+        ),
         growable: false,
       ),
       growable: false,
@@ -863,11 +842,19 @@ class YoloV8PersonDetector {
       if (shape.length == 3) {
         buf = List.generate(
           shape[0],
-              (_) => List.generate(shape[1], (_) => List<double>.filled(shape[2], 0.0), growable: false),
+          (_) => List.generate(
+            shape[1],
+            (_) => List<double>.filled(shape[2], 0.0),
+            growable: false
+          ),
           growable: false,
         );
       } else if (shape.length == 2) {
-        buf = List.generate(shape[0], (_) => List<double>.filled(shape[1], 0.0), growable: false);
+        buf = List.generate(
+          shape[0],
+          (_) => List<double>.filled(shape[1], 0.0),
+          growable: false
+        );
       } else {
         buf = List.filled(shape.reduce((a, b) => a * b), 0.0);
       }
@@ -998,9 +985,12 @@ class YoloV8PersonDetector {
 
     final out = <YoloDetection>[];
     for (final i in keep) {
-      out.add(YoloDetection(cls: keptCls[i], score: keptScore[i], bboxXYXY: boxes[i]));
+      out.add(YoloDetection(
+        cls: keptCls[i],
+        score: keptScore[i],
+        bboxXYXY: boxes[i]
+      ));
     }
     return out;
   }
 }
-

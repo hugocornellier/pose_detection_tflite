@@ -1,10 +1,8 @@
 import 'dart:io';
-import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
 import 'package:pose_detection_tflite/pose_detection_tflite.dart';
-
 
 void main() {
   runApp(const PoseDetectionApp());
@@ -35,15 +33,12 @@ class PoseDetectionScreen extends StatefulWidget {
 
 class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   final PoseDetector _poseDetector = PoseDetector();
-  final YoloV8PersonDetector _yoloDetector = YoloV8PersonDetector();
   final ImagePicker _picker = ImagePicker();
 
   bool _isInitialized = false;
   bool _isProcessing = false;
   File? _imageFile;
-  List<PoseDetectionResult> _poseResults = [];
-
-  List<YoloDetection> _yoloDetections = [];
+  List<PoseResult> _results = [];
   String? _errorMessage;
 
   @override
@@ -59,8 +54,16 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     });
 
     try {
-      await _poseDetector.initialize(complexity: PoseModelComplexity.heavy);
-      await _yoloDetector.initialize();
+      await _poseDetector.initialize(
+        options: const PoseOptions(
+          mode: PoseMode.boxesAndLandmarks,
+          landmarkModel: PoseLandmarkModel.heavy,
+          detectorConf: 0.6,
+          detectorIou: 0.4,
+          maxDetections: 10,
+          minLandmarkScore: 0.5,
+        ),
+      );
       setState(() {
         _isInitialized = true;
         _isProcessing = false;
@@ -80,34 +83,18 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
 
       setState(() {
         _imageFile = File(pickedFile.path);
-        _poseResults = [];
-        _yoloDetections = [];
+        _results = [];
         _isProcessing = true;
         _errorMessage = null;
       });
 
       final bytes = await _imageFile!.readAsBytes();
-      final decoded = img.decodeImage(bytes);
-
-      List<YoloDetection> dets = [];
-      List<PoseDetectionResult> poses = [];
-      if (decoded != null) {
-        dets = _yoloDetector.detectOnImage(
-          decoded,
-          confThres: 0.6,
-          iouThres: 0.4,
-          topkPreNms: 100,
-          maxDet: 10,
-          personOnly: true,
-        );
-        poses = await _poseDetector.detectPosesFromImageWithYolo(decoded, dets);
-      }
+      final results = await _poseDetector.detect(bytes);
 
       setState(() {
-        _poseResults = poses;
-        _yoloDetections = dets;
+        _results = results;
         _isProcessing = false;
-        if (poses.isEmpty && dets.isEmpty) _errorMessage = 'No pose or people detected in image';
+        if (results.isEmpty) _errorMessage = 'No people detected in image';
       });
     } catch (e) {
       setState(() {
@@ -152,10 +139,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
   @override
   void dispose() {
     _poseDetector.dispose();
-    _yoloDetector.dispose();
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -242,10 +227,8 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
         children: [
           PoseVisualizerWidget(
             imageFile: _imageFile!,
-            poseResults: _poseResults,
-            yoloDetections: _yoloDetections,
+            results: _results,
           ),
-
           if (_isProcessing)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -274,7 +257,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
                 ),
               ),
             ),
-          if (_poseResults.isNotEmpty)
+          if (_results.isNotEmpty)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Card(
@@ -283,7 +266,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Poses Detected: ${_poseResults.length} ✓',
+                      Text('Detections: ${_results.length} ✓',
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
@@ -293,28 +276,14 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
                 ),
               ),
             ),
-
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          Text(value, style: const TextStyle(color: Colors.blue)),
         ],
       ),
     );
   }
 
   void _showPoseInfo() {
-    if (_poseResults.isEmpty) return;
-    final first = _poseResults.first;
+    if (_results.isEmpty) return;
+    final first = _results.first;
 
     showModalBottomSheet(
       context: context,
@@ -337,8 +306,9 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
     );
   }
 
-  List<Widget> _buildLandmarkListFor(PoseDetectionResult result) {
-    return result.landmarks.map((landmark) {
+  List<Widget> _buildLandmarkListFor(PoseResult result) {
+    final lm = result.landmarks ?? const <PoseLandmark>[];
+    return lm.map((landmark) {
       final pixel = landmark.toPixel(result.imageWidth, result.imageHeight);
       return Card(
         margin: const EdgeInsets.only(bottom: 8),
@@ -365,10 +335,9 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
 
 class PoseVisualizerWidget extends StatelessWidget {
   final File imageFile;
-  final List<PoseDetectionResult> poseResults;
-  final List<YoloDetection> yoloDetections;
+  final List<PoseResult> results;
 
-  const PoseVisualizerWidget({super.key, required this.imageFile, required this.poseResults, required this.yoloDetections});
+  const PoseVisualizerWidget({super.key, required this.imageFile, required this.results});
 
   @override
   Widget build(BuildContext context) {
@@ -376,7 +345,7 @@ class PoseVisualizerWidget extends StatelessWidget {
       return Stack(
         children: [
           Image.file(imageFile, fit: BoxFit.contain),
-          Positioned.fill(child: CustomPaint(painter: MultiOverlayPainter(poses: poseResults, yolo: yoloDetections))),
+          Positioned.fill(child: CustomPaint(painter: MultiOverlayPainter(results: results))),
         ],
       );
     });
@@ -384,33 +353,16 @@ class PoseVisualizerWidget extends StatelessWidget {
 }
 
 class MultiOverlayPainter extends CustomPainter {
-  final List<PoseDetectionResult> poses;
-  final List<YoloDetection> yolo;
+  final List<PoseResult> results;
 
-  MultiOverlayPainter({required this.poses, required this.yolo});
+  MultiOverlayPainter({required this.results});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (poses.isEmpty && yolo.isEmpty) return;
+    if (results.isEmpty) return;
 
-    int iw = 0;
-    int ih = 0;
-
-    if (poses.isNotEmpty) {
-      iw = poses.first.imageWidth;
-      ih = poses.first.imageHeight;
-    } else if (yolo.isNotEmpty) {
-      double maxX = 0;
-      double maxY = 0;
-      for (final d in yolo) {
-        maxX = math.max(maxX, d.bboxXYXY[2]);
-        maxY = math.max(maxY, d.bboxXYXY[3]);
-      }
-      iw = maxX.ceil();
-      ih = maxY.ceil();
-    }
-
-    if (iw == 0 || ih == 0) return;
+    final iw = results.first.imageWidth;
+    final ih = results.first.imageHeight;
 
     final imageAspect = iw / ih;
     final canvasAspect = size.width / size.height;
@@ -427,15 +379,16 @@ class MultiOverlayPainter extends CustomPainter {
       offsetY = (size.height - ih * scaleY) / 2;
     }
 
-    for (final p in poses) {
-      _drawConnections(canvas, p, scaleX, scaleY, offsetX, offsetY);
-      _drawLandmarks(canvas, p, scaleX, scaleY, offsetX, offsetY);
+    for (final r in results) {
+      _drawBbox(canvas, r, scaleX, scaleY, offsetX, offsetY);
+      if (r.hasLandmarks) {
+        _drawConnections(canvas, r, scaleX, scaleY, offsetX, offsetY);
+        _drawLandmarks(canvas, r, scaleX, scaleY, offsetX, offsetY);
+      }
     }
-    _drawYolo(canvas, yolo, scaleX, scaleY, offsetX, offsetY);
   }
 
-
-  void _drawConnections(Canvas canvas, PoseDetectionResult result, double scaleX, double scaleY, double offsetX, double offsetY) {
+  void _drawConnections(Canvas canvas, PoseResult result, double scaleX, double scaleY, double offsetX, double offsetY) {
     final paint = Paint()
       ..color = Colors.green.withOpacity(0.8)
       ..strokeWidth = 3
@@ -484,8 +437,8 @@ class MultiOverlayPainter extends CustomPainter {
     }
   }
 
-  void _drawLandmarks(Canvas canvas, PoseDetectionResult result, double scaleX, double scaleY, double offsetX, double offsetY) {
-    for (final l in result.landmarks) {
+  void _drawLandmarks(Canvas canvas, PoseResult result, double scaleX, double scaleY, double offsetX, double offsetY) {
+    for (final l in result.landmarks ?? const <PoseLandmark>[]) {
       if (l.visibility > 0.5) {
         final center = Offset(l.x * scaleX + offsetX, l.y * scaleY + offsetY);
         final glow = Paint()..color = Colors.blue.withOpacity(0.3);
@@ -498,7 +451,7 @@ class MultiOverlayPainter extends CustomPainter {
     }
   }
 
-  void _drawYolo(Canvas canvas, List<YoloDetection> dets, double scaleX, double scaleY, double offsetX, double offsetY) {
+  void _drawBbox(Canvas canvas, PoseResult r, double scaleX, double scaleY, double offsetX, double offsetY) {
     final boxPaint = Paint()
       ..color = Colors.orangeAccent.withOpacity(0.9)
       ..style = PaintingStyle.stroke
@@ -508,25 +461,22 @@ class MultiOverlayPainter extends CustomPainter {
       ..color = Colors.orangeAccent.withOpacity(0.08)
       ..style = PaintingStyle.fill;
 
-    final textStyle = TextStyle(color: Colors.orangeAccent.withOpacity(0.95), fontSize: 12);
+    final x1 = r.bboxPx.left * scaleX + offsetX;
+    final y1 = r.bboxPx.top * scaleY + offsetY;
+    final x2 = r.bboxPx.right * scaleX + offsetX;
+    final y2 = r.bboxPx.bottom * scaleY + offsetY;
+    final rect = Rect.fromLTRB(x1, y1, x2, y2);
+    canvas.drawRect(rect, fillPaint);
+    canvas.drawRect(rect, boxPaint);
 
-    for (final d in dets) {
-      final x1 = d.bboxXYXY[0] * scaleX + offsetX;
-      final y1 = d.bboxXYXY[1] * scaleY + offsetY;
-      final x2 = d.bboxXYXY[2] * scaleX + offsetX;
-      final y2 = d.bboxXYXY[3] * scaleY + offsetY;
-      final rect = Rect.fromLTRB(x1, y1, x2, y2);
-      canvas.drawRect(rect, fillPaint);
-      canvas.drawRect(rect, boxPaint);
-      final tp = TextPainter(
-        text: TextSpan(text: 'person ${d.score.toStringAsFixed(2)}', style: textStyle),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: rect.width);
-      tp.paint(canvas, Offset(x1 + 4, y1 + 2));
-    }
+    final textStyle = TextStyle(color: Colors.orangeAccent.withOpacity(0.95), fontSize: 12);
+    final tp = TextPainter(
+      text: TextSpan(text: 'person ${r.score.toStringAsFixed(2)}', style: textStyle),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: rect.width);
+    tp.paint(canvas, Offset(x1 + 4, y1 + 2));
   }
 
   @override
   bool shouldRepaint(MultiOverlayPainter oldDelegate) => true;
 }
-
