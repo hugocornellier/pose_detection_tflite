@@ -34,6 +34,7 @@ flutter:
     - assets/models/pose_landmark_lite.tflite
     - assets/models/pose_landmark_full.tflite
     - assets/models/pose_landmark_heavy.tflite
+    - assets/models/yolov8n_float32.tflite
     - assets/bin/libtensorflowlite_c-win.dll
     - assets/bin/libtensorflowlite_c-linux.so
 

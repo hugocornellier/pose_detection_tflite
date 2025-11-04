@@ -1,4 +1,4 @@
-package com.hugocornellier.face_detection_tflite
+package com.hugocornellier.pose_detection_tflite
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
@@ -17,7 +17,7 @@ class PoseDetectionTflitePlugin :
     private lateinit var channel: MethodChannel
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "face_detection_tflite")
+        channel = MethodChannel(flutterPluginBinding.binaryMessenger, "pose_detection_tflite")
         channel.setMethodCallHandler(this)
     }
 

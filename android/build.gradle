@@ -1,4 +1,4 @@
-group = "com.hugocornellier.face_detection_tflite"
+group = "com.hugocornellier.pose_detection_tflite"
 version = "1.0-SNAPSHOT"
 
 buildscript {
@@ -25,7 +25,7 @@ apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
 
 android {
-    namespace = "com.hugocornellier.face_detection_tflite"
+    namespace = "com.hugocornellier.pose_detection_tflite"
 
     compileSdk = 36
 

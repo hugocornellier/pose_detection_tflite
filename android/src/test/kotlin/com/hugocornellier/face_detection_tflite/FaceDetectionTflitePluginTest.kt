@@ -1,4 +1,4 @@
-package com.hugocornellier.face_detection_tflite
+package com.hugocornellier.pose_detection_tflite
 
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
