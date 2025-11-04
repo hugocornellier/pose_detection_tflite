@@ -87,7 +87,6 @@ class PoseDetector {
       final contents = exeDir.parent;
       candidates = [
         p.join(contents.path, 'Resources', 'libtensorflowlite_c-mac.dylib'),
-        'libtensorflowlite_c-mac.dylib',
       ];
       hint = 'Expected in app bundle Resources, or resolvable by name.';
     } else {
