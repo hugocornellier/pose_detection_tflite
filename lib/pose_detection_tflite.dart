@@ -1,25 +1,18 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ffi' as ffi;
+
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter_custom/tflite_flutter.dart';
 import 'package:path/path.dart' as p;
 
-// ============================================================================
-// POSE DETECTION LIBRARY - Single File Implementation
-// ============================================================================
-
-/// Main pose detection class that handles the two-stage pipeline:
-/// 1. Pose Detection - Detects person bounding boxes
-/// 2. Pose Landmark - Estimates keypoints within detected regions
 class PoseDetector {
   Interpreter? _detectorInterpreter;
   Interpreter? _landmarkInterpreter;
 
   bool _isInitialized = false;
-  PoseModelComplexity _complexity = PoseModelComplexity.lite;
+  late PoseModelComplexity _complexity;
 
-  // Static TFLite library reference
   static ffi.DynamicLibrary? _tfliteLib;
   static List<List<double>>? _anchors;
 
@@ -61,10 +54,8 @@ class PoseDetector {
       }
     }
     _anchors = anchors;
-    print('anchors=${_anchors!.length}');
   }
 
-  /// Ensure TensorFlow Lite library is loaded
   static Future<void> _ensureTFLiteLoaded() async {
     if (_tfliteLib != null) return;
 
@@ -126,31 +117,31 @@ class PoseDetector {
     );
   }
 
-  /// Initialize the pose detector with specified complexity
   Future<void> initialize({
-    PoseModelComplexity complexity = PoseModelComplexity.lite,
+    PoseModelComplexity complexity = PoseModelComplexity.heavy,
   }) async {
     if (_isInitialized) {
       await dispose();
     }
 
-    // Load TFLite library first
     await _ensureTFLiteLoaded();
-
     _complexity = complexity;
 
-    // Load detector model directly from assets
     _detectorInterpreter = await _loadModelFromAssets(
       'assets/models/pose_detection.tflite',
     );
+    _landmarkInterpreter = await _loadModelFromAssets(
+      _getLandmarkModelPath(complexity),
+    );
 
-    // Load landmark model based on complexity
-    final landmarkPath = _getLandmarkModelPath(complexity);
-    _landmarkInterpreter = await _loadModelFromAssets(landmarkPath);
+    _detectorInterpreter!.resizeInputTensor(0, [1, 224, 224, 3]);
+    _detectorInterpreter!.allocateTensors();
+
+    _landmarkInterpreter!.resizeInputTensor(0, [1, 256, 256, 3]);
+    _landmarkInterpreter!.allocateTensors();
+
     _generateAnchors();
-
     _isInitialized = true;
-
   }
 
   String _getLandmarkModelPath(PoseModelComplexity complexity) {
@@ -168,13 +159,11 @@ class PoseDetector {
     return await Interpreter.fromAsset(assetPath);
   }
 
-  /// Detect pose from an image file
   Future<PoseDetectionResult?> detectPose(File imageFile) async {
     if (!_isInitialized) {
       throw StateError('PoseDetector not initialized. Call initialize() first.');
     }
 
-    // Load and decode image
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes);
     if (image == null) return null;
@@ -182,7 +171,6 @@ class PoseDetector {
     return detectPoseFromImage(image);
   }
 
-  /// Detect pose from an Image object
   Future<PoseDetectionResult?> detectPoseFromImage(img.Image image) async {
     if (!_isInitialized) {
       throw StateError('PoseDetector not initialized. Call initialize() first.');
@@ -198,12 +186,9 @@ class PoseDetector {
     );
 
     final roiImage = img.copyResize(image, width: 256, height: 256);
-    print('roi_size=${roiImage.width}x${roiImage.height}');
-
     final landmarks = await _runLandmarkDetection(roiImage);
-    print('lm_score=${landmarks.score.toStringAsFixed(3)}');
+
     if (landmarks.score < 0.5) {
-      print('lm_reject_low_score');
       return null;
     }
 
@@ -214,11 +199,6 @@ class PoseDetector {
       image.height,
     );
 
-    if (transformedLandmarks.isNotEmpty) {
-      final l0 = transformedLandmarks.first;
-      print('lm0=${l0.x.toStringAsFixed(3)},${l0.y.toStringAsFixed(3)} vis=${l0.visibility.toStringAsFixed(3)}');
-    }
-
     return PoseDetectionResult(
       landmarks: transformedLandmarks,
       detection: fullFrame,
@@ -227,192 +207,42 @@ class PoseDetector {
     );
   }
 
+  List<List<List<List<double>>>>? _nhwc256Cache;
 
-  /// Stage 1: Run pose detection model
-  Future<List<PoseDetection>> _runPoseDetection(img.Image image) async {
-    // Prepare input: resize to 224x224
-    final inputImage = img.copyResize(image, width: 224, height: 224);
-    final input = _imageToFloat32List(inputImage, 224, 224);
-
-    // Prepare outputs
-    // Output 0: [1, 2254, 12] - bounding boxes and keypoints
-    // Output 1: [1, 2254, 1] - confidence scores
-    final outputBoxes = _reshapeToTensor3D(
-      List.filled(1 * 2254 * 12, 0.0),
+  List<List<List<List<double>>>> _imageToNHWC4D(
+    img.Image image,
+    int width,
+    int height,
+  ) {
+    _nhwc256Cache ??= List.generate(
       1,
-      2254,
-      12,
-    );
-    final outputScores = _reshapeToTensor3D(
-      List.filled(1 * 2254 * 1, 0.0),
-      1,
-      2254,
-      1,
+          (_) => List.generate(
+        height,
+            (_) => List.generate(
+          width,
+              (_) => List<double>.filled(3, 0.0),
+          growable: false,
+        ),
+        growable: false,
+      ),
+      growable: false,
     );
 
-    // Run inference
-    _detectorInterpreter!.runForMultipleInputs(
-      [input],
-      {
-        0: outputBoxes,
-        1: outputScores,
-      },
-    );
-
-    // Parse detections
-    return _parseDetections(outputBoxes, outputScores);
-  }
-
-  List<PoseDetection> _parseDetections(
-      List<dynamic> boxes,
-      List<dynamic> scores,
-      ) {
-    double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
-    double _clamp01(double v) => v.isNaN ? 0.0 : v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
-
-    final detections = <PoseDetection>[];
-    const double scoreThreshold = 0.3;
-
-    for (int i = 0; i < 2254; i++) {
-      final rawScore = scores[0][i][0] as double;
-      final score = _sigmoid(rawScore);
-      if (score <= scoreThreshold) continue;
-
-      final yCenter = _clamp01(boxes[0][i][0] as double);
-      final xCenter = _clamp01(boxes[0][i][1] as double);
-      final height = _clamp01(boxes[0][i][2] as double);
-      final width  = _clamp01(boxes[0][i][3] as double);
-
-      final keypoints = <PoseKeypoint>[];
-      for (int k = 0; k < 4; k++) {
-        final kx = _clamp01(boxes[0][i][4 + k * 2] as double);
-        final ky = _clamp01(boxes[0][i][5 + k * 2] as double);
-        keypoints.add(PoseKeypoint(x: kx, y: ky, score: 1.0));
-      }
-
-      detections.add(PoseDetection(
-        xCenter: xCenter,
-        yCenter: yCenter,
-        width: width,
-        height: height,
-        score: score,
-        keypoints: keypoints,
-      ));
-    }
-
-    final kept = _nonMaxSuppression(detections);
-    print('detections_kept=${kept.length}');
-    return kept;
-  }
-
-
-  List<PoseDetection> _nonMaxSuppression(
-      List<PoseDetection> detections, {
-        double iouThreshold = 0.3,
-      }) {
-    if (detections.isEmpty) return [];
-
-    // Sort by score descending
-    detections.sort((a, b) => b.score.compareTo(a.score));
-
-    final selected = <PoseDetection>[];
-    final suppressed = <bool>[];
-
-    for (int i = 0; i < detections.length; i++) {
-      suppressed.add(false);
-    }
-
-    for (int i = 0; i < detections.length; i++) {
-      if (suppressed[i]) continue;
-
-      selected.add(detections[i]);
-
-      for (int j = i + 1; j < detections.length; j++) {
-        if (suppressed[j]) continue;
-
-        final iou = _calculateIOU(detections[i], detections[j]);
-        if (iou > iouThreshold) {
-          suppressed[j] = true;
-        }
+    final out = _nhwc256Cache!;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final px = image.getPixel(x, y);
+        out[0][y][x][0] = px.r / 255.0;
+        out[0][y][x][1] = px.g / 255.0;
+        out[0][y][x][2] = px.b / 255.0;
       }
     }
-
-    return selected;
+    return out;
   }
 
-  double _calculateIOU(PoseDetection a, PoseDetection b) {
-    final aLeft = a.xCenter - a.width / 2;
-    final aRight = a.xCenter + a.width / 2;
-    final aTop = a.yCenter - a.height / 2;
-    final aBottom = a.yCenter + a.height / 2;
-
-    final bLeft = b.xCenter - b.width / 2;
-    final bRight = b.xCenter + b.width / 2;
-    final bTop = b.yCenter - b.height / 2;
-    final bBottom = b.yCenter + b.height / 2;
-
-    final intersectLeft = math.max(aLeft, bLeft);
-    final intersectRight = math.min(aRight, bRight);
-    final intersectTop = math.max(aTop, bTop);
-    final intersectBottom = math.min(aBottom, bBottom);
-
-    if (intersectRight < intersectLeft || intersectBottom < intersectTop) {
-      return 0.0;
-    }
-
-    final intersectArea =
-        (intersectRight - intersectLeft) * (intersectBottom - intersectTop);
-    final aArea = a.width * a.height;
-    final bArea = b.width * b.height;
-    final unionArea = aArea + bArea - intersectArea;
-
-    return intersectArea / unionArea;
-  }
-
-  /// Extract ROI from image with padding
-  img.Image _extractAndPadROI(img.Image image, PoseDetection detection) {
-    const paddingFactor = 1.8;
-    final w = (detection.width * paddingFactor).clamp(0.1, 1.0);
-    final h = (detection.height * paddingFactor).clamp(0.1, 1.0);
-    final cx = detection.xCenter.clamp(0.0, 1.0);
-    final cy = detection.yCenter.clamp(0.0, 1.0);
-
-    final left = ((cx - w / 2) * image.width).round();
-    final top = ((cy - h / 2) * image.height).round();
-    final rw = (w * image.width).round();
-    final rh = (h * image.height).round();
-
-    final cl = left.clamp(0, image.width);
-    final ct = top.clamp(0, image.height);
-    final cr = (left + rw).clamp(0, image.width);
-    final cb = (top + rh).clamp(0, image.height);
-
-    final cropW = (cr - cl).clamp(1, image.width);
-    final cropH = (cb - ct).clamp(1, image.height);
-
-    final cropped = img.copyCrop(
-      image,
-      x: cl,
-      y: ct,
-      width: cropW,
-      height: cropH,
-    );
-
-    return img.copyResize(cropped, width: 256, height: 256);
-  }
-
-
-  /// Stage 2: Run landmark detection model
   Future<PoseLandmarks> _runLandmarkDetection(img.Image roiImage) async {
-    // Prepare input: already 256x256
-    final input = _imageToFloat32List(roiImage, 256, 256);
+    final input4d = _imageToNHWC4D(roiImage, 256, 256);
 
-    // Prepare outputs based on model inspection:
-    // [0] Shape: [1, 195] - landmarks (33 points × 3 coords + 33 × 3 world coords)
-    // [1] Shape: [1, 1] - pose score
-    // [2] Shape: [1, 256, 256, 1] - segmentation mask
-    // [3] Shape: [1, 64, 64, 39] - heatmap
-    // [4] Shape: [1, 117] - world landmarks (33 × 3 + visibility)
     final outputLandmarks = [List.filled(195, 0.0)];
     final outputScore = [[0.0]];
     final outputMask = _reshapeToTensor4D(
@@ -431,9 +261,8 @@ class PoseDetector {
     );
     final outputWorld = [List.filled(117, 0.0)];
 
-    // Run inference
     _landmarkInterpreter!.runForMultipleInputs(
-      [input],
+      [input4d],
       {
         0: outputLandmarks,
         1: outputScore,
@@ -443,15 +272,14 @@ class PoseDetector {
       },
     );
 
-    // Parse landmarks
     return _parseLandmarks(outputLandmarks, outputScore, outputWorld);
   }
 
   PoseLandmarks _parseLandmarks(
-      List<dynamic> landmarksData,
-      List<dynamic> scoreData,
-      List<dynamic> worldData,
-      ) {
+    List<dynamic> landmarksData,
+    List<dynamic> scoreData,
+    List<dynamic> worldData,
+  ) {
     double _sigmoid(double x) => 1.0 / (1.0 + math.exp(-x));
     double _clamp01(double v) => v.isNaN ? 0.0 : v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
 
@@ -483,13 +311,12 @@ class PoseDetector {
     );
   }
 
-
   List<PoseLandmark> _transformLandmarks(
-      PoseLandmarks landmarks,
-      PoseDetection detection,
-      int imageWidth,
-      int imageHeight,
-      ) {
+    PoseLandmarks landmarks,
+    PoseDetection detection,
+    int imageWidth,
+    int imageHeight,
+  ) {
     final usePad = (detection.width < 0.999 || detection.height < 0.999);
     final paddingFactor = usePad ? 1.8 : 1.0;
 
@@ -514,34 +341,6 @@ class PoseDetector {
     }).toList();
   }
 
-  List<List<List<List<double>>>> _imageToFloat32List(
-      img.Image image,
-      int width,
-      int height,
-      ) {
-    final result = List.generate(
-      1,
-          (_) => List.generate(
-        height,
-            (_) => List.generate(
-          width,
-              (_) => List<double>.filled(3, 0.0),
-        ),
-      ),
-    );
-
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final pixel = image.getPixel(x, y);
-        result[0][y][x][0] = pixel.r / 255.0;
-        result[0][y][x][1] = pixel.g / 255.0;
-        result[0][y][x][2] = pixel.b / 255.0;
-      }
-    }
-
-    return result;
-  }
-
   bool get isInitialized => _isInitialized;
 
   Future<void> dispose() async {
@@ -553,18 +352,12 @@ class PoseDetector {
   }
 }
 
-// ============================================================================
-// DATA MODELS
-// ============================================================================
-
-/// Model complexity options
 enum PoseModelComplexity {
   lite,   // 2.69 MB - Fastest
   full,   // 6.14 MB - Balanced
   heavy,  // 26.42 MB - Most accurate
 }
 
-/// Detection result from stage 1
 class PoseDetection {
   final double xCenter; // Normalized 0-1
   final double yCenter; // Normalized 0-1
@@ -583,7 +376,6 @@ class PoseDetection {
   });
 }
 
-/// Keypoint from detector
 class PoseKeypoint {
   final double x; // Normalized 0-1
   final double y; // Normalized 0-1
@@ -596,7 +388,6 @@ class PoseKeypoint {
   });
 }
 
-/// Landmarks result from stage 2
 class PoseLandmarks {
   final List<PoseLandmark> landmarks;
   final double score;
@@ -607,7 +398,6 @@ class PoseLandmarks {
   });
 }
 
-/// Individual landmark point
 class PoseLandmark {
   final PoseLandmarkType type;
   final double x; // Normalized 0-1
@@ -623,7 +413,6 @@ class PoseLandmark {
     required this.visibility,
   });
 
-  /// Convert to pixel coordinates
   Point toPixel(int imageWidth, int imageHeight) {
     return Point(
       (x * imageWidth).toInt(),
@@ -632,7 +421,6 @@ class PoseLandmark {
   }
 }
 
-/// Complete pose detection result
 class PoseDetectionResult {
   final List<PoseLandmark> landmarks;
   final PoseDetection detection;
@@ -646,7 +434,6 @@ class PoseDetectionResult {
     required this.imageHeight,
   });
 
-  /// Get landmark by type
   PoseLandmark? getLandmark(PoseLandmarkType type) {
     try {
       return landmarks.firstWhere((l) => l.type == type);
@@ -655,7 +442,6 @@ class PoseDetectionResult {
     }
   }
 
-  /// Check if pose is visible enough
   bool get isVisible {
     final avgVisibility = landmarks
         .map((l) => l.visibility)
@@ -676,7 +462,6 @@ class PoseDetectionResult {
   }
 }
 
-/// 33 pose landmarks following MediaPipe Pose convention
 enum PoseLandmarkType {
   nose,                    // 0
   leftEyeInner,           // 1
@@ -713,7 +498,6 @@ enum PoseLandmarkType {
   rightFootIndex,         // 32
 }
 
-/// Simple point class
 class Point {
   final int x;
   final int y;
@@ -724,33 +508,6 @@ class Point {
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
-
-/// Helper to reshape a flat list into nested structure
-List<List<List<double>>> _reshapeToTensor3D(
-    List<double> flat,
-    int dim1,
-    int dim2,
-    int dim3,
-    ) {
-  final result = List.generate(
-    dim1,
-        (_) => List.generate(
-      dim2,
-          (_) => List<double>.filled(dim3, 0.0),
-    ),
-  );
-
-  int index = 0;
-  for (int i = 0; i < dim1; i++) {
-    for (int j = 0; j < dim2; j++) {
-      for (int k = 0; k < dim3; k++) {
-        result[i][j][k] = flat[index++];
-      }
-    }
-  }
-
-  return result;
-}
 
 /// Helper to reshape a flat list into nested structure for 4D tensors
 List<List<List<List<double>>>> _reshapeToTensor4D(

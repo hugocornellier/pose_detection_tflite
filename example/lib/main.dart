@@ -55,7 +55,7 @@ class _PoseDetectionScreenState extends State<PoseDetectionScreen> {
 
     try {
       await _poseDetector.initialize(
-        complexity: PoseModelComplexity.lite,
+        complexity: PoseModelComplexity.heavy,
       );
 
       setState(() {
