@@ -18,7 +18,6 @@ struct _PoseDetectionTflitePlugin {
 
 G_DEFINE_TYPE(PoseDetectionTflitePlugin, pose_detection_tflite_plugin, g_object_get_type())
 
-// Called when a method call is received from Flutter.
 static void pose_detection_tflite_plugin_handle_method_call(
     PoseDetectionTflitePlugin* self,
     FlMethodCall* method_call) {

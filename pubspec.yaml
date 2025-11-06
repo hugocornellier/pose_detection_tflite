@@ -40,6 +40,10 @@ flutter:
 
   plugin:
     platforms:
+      ios:
+        dartPluginClass: PoseDetectionTfliteDart
+      android:
+        dartPluginClass: PoseDetectionTfliteDart
       macos:
         pluginClass: PoseDetectionTflitePlugin
       windows:

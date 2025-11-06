@@ -1,12 +1,8 @@
 #include "pose_detection_tflite_plugin.h"
 #include "include/pose_detection_tflite/pose_detection_tflite_plugin.h"  // ensures dllexport is seen here
 
-// This must be included before many other Windows headers.
 #include <windows.h>
-
-// For getPlatformVersion; remove unless needed for your plugin implementation.
 #include <VersionHelpers.h>
-
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
@@ -16,7 +12,6 @@
 
 namespace pose_detection_tflite {
 
-// static
 void PoseDetectionTflitePlugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows *registrar) {
   auto channel =
@@ -35,7 +30,6 @@ void PoseDetectionTflitePlugin::RegisterWithRegistrar(
 }
 
 PoseDetectionTflitePlugin::PoseDetectionTflitePlugin() {}
-
 PoseDetectionTflitePlugin::~PoseDetectionTflitePlugin() {}
 
 void PoseDetectionTflitePlugin::HandleMethodCall(
@@ -59,8 +53,6 @@ void PoseDetectionTflitePlugin::HandleMethodCall(
 
 }  // namespace pose_detection_tflite
 
-// Free function expected by generated_plugin_registrant on Windows.
-// Uses the C API type, then converts to the C++ registrar.
 void PoseDetectionTflitePluginRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
   auto cpp_registrar =

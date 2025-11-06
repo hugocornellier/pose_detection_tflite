@@ -16,11 +16,9 @@ class PoseDetectionTflitePlugin : public flutter::Plugin {
 
   virtual ~PoseDetectionTflitePlugin();
 
-  // Disallow copy and assign.
   PoseDetectionTflitePlugin(const PoseDetectionTflitePlugin&) = delete;
   PoseDetectionTflitePlugin& operator=(const PoseDetectionTflitePlugin&) = delete;
 
-  // Called when a method is called on this plugin's channel from Dart.
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue> &method_call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);

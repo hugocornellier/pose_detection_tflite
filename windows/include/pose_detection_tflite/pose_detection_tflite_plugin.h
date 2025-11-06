@@ -9,7 +9,6 @@
 #define FLUTTER_PLUGIN_EXPORT __declspec(dllimport)
 #endif
 
-// C++ signature is fine (no extern "C") since the registrant is C++ and includes this header.
 FLUTTER_PLUGIN_EXPORT void PoseDetectionTflitePluginRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar);
 

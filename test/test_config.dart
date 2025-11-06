@@ -3,23 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart' show Size;
 import 'dart:math' as math;
 
-/// Global test setup and configuration for pose_detection_tflite tests.
-///
-/// This file provides:
-/// - Flutter test environment initialization
-/// - Common test utilities and helpers
-/// - Test data generators
-/// - Assertion helpers
 void globalTestSetup() {
   TestWidgetsFlutterBinding.ensureInitialized();
 }
 
-/// Test utilities for face detection tests
 class TestUtils {
-  /// Generates a valid normalized keypoints array with all 6 face landmarks
-  ///
-  /// Values are in normalized coordinates [0.0, 1.0]
-  /// Order: leftEye, rightEye, noseTip, mouth, leftEyeTragion, rightEyeTragion
   static List<double> generateValidKeypoints({
     math.Point<double>? leftEye,
     math.Point<double>? rightEye,
@@ -38,12 +26,7 @@ class TestUtils {
     ];
   }
 
-  /// Creates a dummy image byte array for testing
-  ///
-  /// Returns a minimal valid image in memory (1x1 pixel)
-  /// For actual image processing tests, use real test fixtures
   static Uint8List createDummyImageBytes() {
-    // Minimal PNG: 1x1 transparent pixel
     return Uint8List.fromList([
       0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
       0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
@@ -57,7 +40,6 @@ class TestUtils {
     ]);
   }
 
-  /// Validates that a Point is within reasonable bounds
   static bool isValidPixelCoordinate(math.Point<double> point, Size imageSize) {
     return point.x >= 0 &&
         point.x <= imageSize.width &&
@@ -65,12 +47,10 @@ class TestUtils {
         point.y <= imageSize.height;
   }
 
-  /// Checks if two doubles are approximately equal within tolerance
   static bool approximatelyEqual(double a, double b, {double epsilon = 0.0001}) {
     return (a - b).abs() < epsilon;
   }
 
-  /// Checks if two Points are approximately equal
   static bool pointsApproximatelyEqual(
       math.Point<double> a,
       math.Point<double> b,
@@ -81,8 +61,7 @@ class TestUtils {
   }
 }
 
-/// Custom matchers for face detection tests
-class FaceDetectionMatchers {
+class PoseDetectionMatchers {
   /// Matcher for checking if a Point is approximately equal to expected
   static Matcher approximatelyEqualsPoint(
       math.Point<double> expected,
