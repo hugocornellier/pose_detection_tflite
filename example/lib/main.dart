@@ -468,13 +468,6 @@ class MultiOverlayPainter extends CustomPainter {
     final rect = Rect.fromLTRB(x1, y1, x2, y2);
     canvas.drawRect(rect, fillPaint);
     canvas.drawRect(rect, boxPaint);
-
-    final textStyle = TextStyle(color: Colors.orangeAccent.withOpacity(0.95), fontSize: 12);
-    final tp = TextPainter(
-      text: TextSpan(text: 'person ${r.score.toStringAsFixed(2)}', style: textStyle),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: rect.width);
-    tp.paint(canvas, Offset(x1 + 4, y1 + 2));
   }
 
   @override

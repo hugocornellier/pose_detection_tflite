@@ -28,6 +28,7 @@ class YoloV8PersonDetector {
 
   List<List<List<List<double>>>>? _inputBuffer;
   Map<int, Object>? _outputBuffers;
+  img.Image? _canvasBuffer;
 
   Future<void> initialize() async {
     const assetPath = 'packages/pose_detection_tflite/assets/models/yolov8n_float32.tflite';
@@ -56,6 +57,7 @@ class YoloV8PersonDetector {
     _interpreter = null;
     _inputBuffer = null;
     _outputBuffers = null;
+    _canvasBuffer = null;
     _isInitialized = false;
   }
 
@@ -190,7 +192,8 @@ class YoloV8PersonDetector {
 
     final ratio = <double>[];
     final dwdh = <int>[];
-    final letter = ImageUtils.letterbox(image, _inW, _inH, ratio, dwdh);
+    _canvasBuffer ??= img.Image(width: _inW, height: _inH);
+    final letter = ImageUtils.letterbox(image, _inW, _inH, ratio, dwdh, reuseCanvas: _canvasBuffer);
     final r = ratio.first;
     final dw = dwdh[0], dh = dwdh[1];
 

@@ -7,8 +7,9 @@ class ImageUtils {
     int tw,
     int th,
     List<double> ratioOut,
-    List<int> dwdhOut,
-  ) {
+    List<int> dwdhOut, {
+    img.Image? reuseCanvas,
+  }) {
     final w = src.width;
     final h = src.height;
     final r = math.min(th / h, tw / w);
@@ -23,7 +24,13 @@ class ImageUtils {
       height: nh,
       interpolation: img.Interpolation.linear,
     );
-    final canvas = img.Image(width: tw, height: th);
+    final canvas = reuseCanvas ?? img.Image(width: tw, height: th);
+    if (canvas.width != tw || canvas.height != th) {
+      throw ArgumentError(
+          'Reuse canvas dimensions (${canvas.width}x${canvas.height}) '
+              'do not match target dimensions (${tw}x${th})'
+      );
+    }
     img.fill(canvas, color: img.ColorRgb8(114, 114, 114));
     img.compositeImage(canvas, resized, dstX: dw, dstY: dh);
 
@@ -35,9 +42,10 @@ class ImageUtils {
   static img.Image letterbox256(
     img.Image src,
     List<double> ratioOut,
-    List<int> dwdhOut,
-  ) {
-    return letterbox(src, 256, 256, ratioOut, dwdhOut);
+    List<int> dwdhOut, {
+    img.Image? reuseCanvas,
+  }) {
+    return letterbox(src, 256, 256, ratioOut, dwdhOut, reuseCanvas: reuseCanvas);
   }
 
   static List<double> scaleFromLetterbox(

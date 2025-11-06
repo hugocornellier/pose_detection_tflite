@@ -11,6 +11,7 @@ class PoseDetector {
 
   final YoloV8PersonDetector _yolo = YoloV8PersonDetector();
   final PoseLandmarkModelRunner _lm = PoseLandmarkModelRunner();
+  img.Image? _canvasBuffer256;
 
   Future<void> initialize({PoseOptions options = const PoseOptions()}) async {
     if (_isInitialized) {
@@ -27,6 +28,7 @@ class PoseDetector {
   Future<void> dispose() async {
     await _yolo.dispose();
     await _lm.dispose();
+    _canvasBuffer256 = null;
     _isInitialized = false;
   }
 
@@ -86,7 +88,8 @@ class PoseDetector {
       final crop = img.copyCrop(image, x: x1, y: y1, width: cw, height: ch);
       final ratio = <double>[];
       final dwdh = <int>[];
-      final letter = ImageUtils.letterbox256(crop, ratio, dwdh);
+      _canvasBuffer256 ??= img.Image(width: 256, height: 256);
+      final letter = ImageUtils.letterbox256(crop, ratio, dwdh, reuseCanvas: _canvasBuffer256);
       final r = ratio.first;
       final dw = dwdh[0];
       final dh = dwdh[1];
