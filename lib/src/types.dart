@@ -77,13 +77,13 @@ class Point {
   Point(this.x, this.y);
 }
 
-class RectPx {
+class BoundingBox {
   final double left;
   final double top;
   final double right;
   final double bottom;
 
-  const RectPx({
+  const BoundingBox({
     required this.left,
     required this.top,
     required this.right,
@@ -92,14 +92,14 @@ class RectPx {
 }
 
 class Pose {
-  final RectPx bboxPx;
+  final BoundingBox boundingBox;
   final double score;
   final List<PoseLandmark> landmarks;
   final int imageWidth;
   final int imageHeight;
 
   const Pose({
-    required this.bboxPx,
+    required this.boundingBox,
     required this.score,
     required this.landmarks,
     required this.imageWidth,

@@ -72,7 +72,7 @@ class PoseDetector {
       for (final YoloDetection d in dets) {
         out.add(
           Pose(
-            bboxPx: RectPx(
+            boundingBox: BoundingBox(
               left: d.bboxXYXY[0],
               top: d.bboxXYXY[1],
               right: d.bboxXYXY[2],
@@ -137,7 +137,7 @@ class PoseDetector {
 
       results.add(
         Pose(
-          bboxPx: RectPx(
+          boundingBox: BoundingBox(
             left: d.bboxXYXY[0],
             top: d.bboxXYXY[1],
             right: d.bboxXYXY[2],

@@ -16,7 +16,7 @@ Future main() async {
 
   // 3. access results
   for (final Pose pose in results) {
-    final RectPx bbox = pose.bboxPx;
+    final BoundingBox bbox = pose.boundingBox;
     print('Bounding box: (${bbox.left}, ${bbox.top}) → (${bbox.right}, ${bbox.bottom})');
 
     if (pose.hasLandmarks) {

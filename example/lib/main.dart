@@ -485,10 +485,10 @@ class MultiOverlayPainter extends CustomPainter {
       ..color = Colors.orangeAccent.withOpacity(0.08)
       ..style = PaintingStyle.fill;
 
-    final double x1 = r.bboxPx.left * scaleX + offsetX;
-    final double y1 = r.bboxPx.top * scaleY + offsetY;
-    final double x2 = r.bboxPx.right * scaleX + offsetX;
-    final double y2 = r.bboxPx.bottom * scaleY + offsetY;
+    final double x1 = r.boundingBox.left * scaleX + offsetX;
+    final double y1 = r.boundingBox.top * scaleY + offsetY;
+    final double x2 = r.boundingBox.right * scaleX + offsetX;
+    final double y2 = r.boundingBox.bottom * scaleY + offsetY;
     final Rect rect = Rect.fromLTRB(x1, y1, x2, y2);
     canvas.drawRect(rect, fillPaint);
     canvas.drawRect(rect, boxPaint);
