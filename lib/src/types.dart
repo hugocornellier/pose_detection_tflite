@@ -124,26 +124,26 @@ class Pose {
     required this.imageHeight,
   });
 
+  /// Gets a specific landmark by type, or null if not found
   PoseLandmark? getLandmark(PoseLandmarkType type) {
-    if (landmarks == null) return null;
     try {
-      return landmarks!.firstWhere((l) => l.type == type);
+      return landmarks.firstWhere((l) => l.type == type);
     } catch (_) {
       return null;
     }
   }
 
-  bool get hasLandmarks => landmarks != null && landmarks!.isNotEmpty;
+  /// Returns true if this pose has landmarks
+  bool get hasLandmarks => landmarks.isNotEmpty;
 
   @override
   String toString() {
-    final List<PoseLandmark> lm = landmarks ?? const <PoseLandmark>[];
-    final String landmarksInfo = lm
+    final String landmarksInfo = landmarks
         .map((l) => '${l.type.name}: (${l.x.toStringAsFixed(2)}, ${l.y.toStringAsFixed(2)}) vis=${l.visibility.toStringAsFixed(2)}')
         .join('\n');
     return 'Pose(\n'
         '  score=${score.toStringAsFixed(3)},\n'
-        '  landmarks=${lm.length},\n'
+        '  landmarks=${landmarks.length},\n'
         '  coords:\n$landmarksInfo\n)';
   }
 }
